@@ -11,6 +11,8 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Animated,
+  ImageBackground,
 } from 'react-native';
 import { Mic, Square, Search, X, MicOff } from 'lucide-react-native';
 import { Audio } from 'expo-av';
@@ -29,6 +31,8 @@ export default function App() {
   const [permissionResponse, requestPermission] = Audio.usePermissions();
 
   const timerRef = useRef(null);
+  const recordButtonScale = useRef(new Animated.Value(1)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     loadNotes();
@@ -40,6 +44,13 @@ export default function App() {
   async function loadNotes() {
     const savedNotes = await StorageService.getNotes();
     setNotes(savedNotes);
+
+    // Fade in animation
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 500,
+      useNativeDriver: true,
+    }).start();
   }
 
   async function startRecording() {
@@ -61,6 +72,13 @@ export default function App() {
       setIsRecording(true);
       setRecordingDuration(0);
 
+      // Animate record button
+      Animated.spring(recordButtonScale, {
+        toValue: 1.2,
+        friction: 3,
+        useNativeDriver: true,
+      }).start();
+
       timerRef.current = setInterval(() => {
         setRecordingDuration((prev) => prev + 1000);
       }, 1000);
@@ -74,7 +92,6 @@ export default function App() {
 
   async function stopRecording() {
     console.log('Stopping recording..');
-    setRecording(undefined);
     setIsRecording(false);
     clearInterval(timerRef.current);
 
@@ -84,6 +101,7 @@ export default function App() {
     });
     const uri = recording.getURI();
     console.log('Recording stopped and stored at', uri);
+    setRecording(undefined);
 
     const noteName = `Voice Note ${notes.length + 1}`;
     const newNote = {
@@ -106,8 +124,13 @@ export default function App() {
         text: 'Delete',
         style: 'destructive',
         onPress: async () => {
-          const updatedNotes = await StorageService.deleteNote(id);
-          setNotes(updatedNotes);
+          try {
+            const updatedNotes = await StorageService.deleteNote(id);
+            setNotes(updatedNotes);
+          } catch (error) {
+            console.error('Error deleting note:', error);
+            Alert.alert('Error', 'Failed to delete the voice note. Please try again.');
+          }
         },
       },
     ]);
@@ -158,25 +181,33 @@ export default function App() {
       </View>
 
       {/* List */}
-      <FlatList
-        data={filteredNotes}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <VoiceNoteItem
-            note={item}
-            onDelete={handleDelete}
-            onRename={handleRename}
+      <Animated.View style={[styles.listContainer, { opacity: fadeAnim }]}>
+        <ImageBackground
+          source={require('./assets/icon.png')}
+          style={styles.backgroundImage}
+          imageStyle={styles.backgroundImageStyle}
+        >
+          <FlatList
+            data={filteredNotes}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
+              <VoiceNoteItem
+                note={item}
+                onDelete={handleDelete}
+                onRename={handleRename}
+              />
+            )}
+            contentContainerStyle={styles.listContent}
+            ListEmptyComponent={
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyText}>
+                  {searchQuery ? 'No notes match your search' : 'No recordings yet. Start reflecting!'}
+                </Text>
+              </View>
+            }
           />
-        )}
-        contentContainerStyle={styles.listContent}
-        ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyText}>
-              {searchQuery ? 'No notes match your search' : 'No recordings yet. Start reflecting!'}
-            </Text>
-          </View>
-        }
-      />
+        </ImageBackground>
+      </Animated.View>
 
       {/* Recorder UI */}
       <KeyboardAvoidingView
@@ -190,17 +221,19 @@ export default function App() {
           </View>
         )}
 
-        <TouchableOpacity
-          style={[styles.recordButton, isRecording && styles.recordingActive]}
-          onPress={isRecording ? stopRecording : startRecording}
-          activeOpacity={0.8}
-        >
+        <Animated.View style={{ transform: [{ scale: recordButtonScale }] }}>
+          <TouchableOpacity
+            style={[styles.recordButton, isRecording && styles.recordingActive]}
+            onPress={isRecording ? stopRecording : startRecording}
+            activeOpacity={0.8}
+          >
           {isRecording ? (
             <Square size={32} color="#ffffff" fill="#ffffff" />
           ) : (
             <Mic size={32} color="#ffffff" />
           )}
-        </TouchableOpacity>
+          </TouchableOpacity>
+        </Animated.View>
 
         <Text style={styles.recordLabel}>
           {isRecording ? 'Tap to Save' : 'Tap to Record'}
@@ -252,6 +285,16 @@ const styles = StyleSheet.create({
     marginLeft: 10,
     fontSize: 16,
     color: '#1e293b',
+  },
+  listContainer: {
+    flex: 1,
+  },
+  backgroundImage: {
+    flex: 1,
+  },
+  backgroundImageStyle: {
+    opacity: 0.1, // Very subtle background
+    resizeMode: 'cover',
   },
   listContent: {
     paddingHorizontal: 20,

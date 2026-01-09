@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, TextInput, Alert } from 'react-native';
 import { Play, Pause, Trash2, Edit2, Check, X, Clock, Calendar } from 'lucide-react-native';
 import { format } from 'date-fns';
 import { Audio } from 'expo-av';
 
 const VoiceNoteItem = ({ note, onDelete, onRename }) => {
-    const [sound, setSound] = useState(null);
+    const soundRef = useRef(null);
     const [isPlaying, setIsPlaying] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
     const [newName, setNewName] = useState(note.name);
@@ -13,12 +13,12 @@ const VoiceNoteItem = ({ note, onDelete, onRename }) => {
     const [duration, setDuration] = useState(note.duration || 0);
 
     useEffect(() => {
-        return sound
-            ? () => {
-                sound.unloadAsync();
+        return () => {
+            if (soundRef.current) {
+                soundRef.current.unloadAsync();
             }
-            : undefined;
-    }, [sound]);
+        };
+    }, []);
 
     const onPlaybackStatusUpdate = (status) => {
         if (status.isLoaded) {
@@ -28,17 +28,22 @@ const VoiceNoteItem = ({ note, onDelete, onRename }) => {
             if (status.didJustFinish) {
                 setIsPlaying(false);
                 setPosition(0);
+                // Unload the sound to allow replay
+                if (soundRef.current) {
+                    soundRef.current.unloadAsync();
+                    soundRef.current = null;
+                }
             }
         }
     };
 
     async function playSound() {
         try {
-            if (sound) {
+            if (soundRef.current) {
                 if (isPlaying) {
-                    await sound.pauseAsync();
+                    await soundRef.current.pauseAsync();
                 } else {
-                    await sound.playAsync();
+                    await soundRef.current.playAsync();
                 }
             } else {
                 const { sound: newSound } = await Audio.Sound.createAsync(
@@ -46,7 +51,7 @@ const VoiceNoteItem = ({ note, onDelete, onRename }) => {
                     { shouldPlay: true },
                     onPlaybackStatusUpdate
                 );
-                setSound(newSound);
+                soundRef.current = newSound;
             }
         } catch (error) {
             console.error('Error playing sound', error);
