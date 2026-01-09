@@ -33,6 +33,11 @@ export default function App() {
   const timerRef = useRef(null);
   const recordButtonScale = useRef(new Animated.Value(1)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const currentSoundRef = useRef(null);
+  const [currentPlayingId, setCurrentPlayingId] = useState(null);
+  const [currentPosition, setCurrentPosition] = useState(0);
+  const [currentDuration, setCurrentDuration] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
 
   useEffect(() => {
     loadNotes();
@@ -141,6 +146,87 @@ export default function App() {
     setNotes(updatedNotes);
   };
 
+  const onPlaybackStatusUpdate = (status) => {
+    if (status.isLoaded) {
+      setCurrentPosition(status.positionMillis);
+      setCurrentDuration(status.durationMillis);
+      if (status.didJustFinish) {
+        setCurrentPlayingId(null);
+        setCurrentPosition(0);
+        setCurrentDuration(0);
+        if (currentSoundRef.current) {
+          currentSoundRef.current.unloadAsync();
+          currentSoundRef.current = null;
+        }
+      }
+    }
+  };
+
+  const playNote = async (noteId, noteUri) => {
+    try {
+      if (currentPlayingId === noteId) {
+        // Toggle pause/resume for the current note
+        if (currentSoundRef.current) {
+          if (isPaused) {
+            await currentSoundRef.current.playAsync();
+            setIsPaused(false);
+          } else {
+            await currentSoundRef.current.pauseAsync();
+            setIsPaused(true);
+          }
+        }
+      } else {
+        // Stop any current playback
+        if (currentSoundRef.current) {
+          await currentSoundRef.current.stopAsync();
+          await currentSoundRef.current.unloadAsync();
+          currentSoundRef.current = null;
+        }
+        // Start new playback
+        const { sound: newSound } = await Audio.Sound.createAsync(
+          { uri: noteUri },
+          { shouldPlay: true },
+          onPlaybackStatusUpdate
+        );
+        currentSoundRef.current = newSound;
+        setCurrentPlayingId(noteId);
+        setIsPaused(false);
+      }
+    } catch (error) {
+      console.error('Error playing sound', error);
+      Alert.alert('Error', 'Could not play the audio');
+    }
+  };
+
+  const seekNote = async (seekPosition) => {
+    if (!currentSoundRef.current || currentDuration === 0) return;
+    try {
+      await currentSoundRef.current.setPositionAsync(Math.max(0, Math.min(seekPosition, currentDuration)));
+    } catch (error) {
+      console.error('Error seeking:', error);
+    }
+  };
+
+  const rewindNote = async () => {
+    if (!currentSoundRef.current || currentDuration === 0) return;
+    const newPosition = Math.max(0, currentPosition - 10000); // 10 seconds back
+    try {
+      await currentSoundRef.current.setPositionAsync(newPosition);
+    } catch (error) {
+      console.error('Error rewinding:', error);
+    }
+  };
+
+  const fastForwardNote = async () => {
+    if (!currentSoundRef.current || currentDuration === 0) return;
+    const newPosition = Math.min(currentDuration, currentPosition + 10000); // 10 seconds forward
+    try {
+      await currentSoundRef.current.setPositionAsync(newPosition);
+    } catch (error) {
+      console.error('Error fast forwarding:', error);
+    }
+  };
+
   const filteredNotes = notes.filter((note) =>
     note.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -195,6 +281,14 @@ export default function App() {
                 note={item}
                 onDelete={handleDelete}
                 onRename={handleRename}
+                onPlay={playNote}
+                currentPlayingId={currentPlayingId}
+                currentPosition={currentPosition}
+                currentDuration={currentDuration}
+                onSeek={seekNote}
+                onRewind={rewindNote}
+                onFastForward={fastForwardNote}
+                isPaused={isPaused}
               />
             )}
             contentContainerStyle={styles.listContent}

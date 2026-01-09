@@ -1,63 +1,15 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, TextInput, Alert } from 'react-native';
-import { Play, Pause, Trash2, Edit2, Check, X, Clock, Calendar } from 'lucide-react-native';
+import React, { useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, TextInput } from 'react-native';
+import { Play, Pause, Rewind, FastForward, Trash2, Edit2, Check, X, Clock, Calendar } from 'lucide-react-native';
 import { format } from 'date-fns';
-import { Audio } from 'expo-av';
 
-const VoiceNoteItem = ({ note, onDelete, onRename }) => {
-    const soundRef = useRef(null);
-    const [isPlaying, setIsPlaying] = useState(false);
+const VoiceNoteItem = ({ note, onDelete, onRename, onPlay, currentPlayingId, currentPosition, currentDuration, onSeek, onRewind, onFastForward, isPaused }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [newName, setNewName] = useState(note.name);
-    const [position, setPosition] = useState(0);
-    const [duration, setDuration] = useState(note.duration || 0);
 
-    useEffect(() => {
-        return () => {
-            if (soundRef.current) {
-                soundRef.current.unloadAsync();
-            }
-        };
-    }, []);
-
-    const onPlaybackStatusUpdate = (status) => {
-        if (status.isLoaded) {
-            setPosition(status.positionMillis);
-            setDuration(status.durationMillis);
-            setIsPlaying(status.isPlaying);
-            if (status.didJustFinish) {
-                setIsPlaying(false);
-                setPosition(0);
-                // Unload the sound to allow replay
-                if (soundRef.current) {
-                    soundRef.current.unloadAsync();
-                    soundRef.current = null;
-                }
-            }
-        }
+    const playSound = () => {
+        onPlay(note.id, note.uri);
     };
-
-    async function playSound() {
-        try {
-            if (soundRef.current) {
-                if (isPlaying) {
-                    await soundRef.current.pauseAsync();
-                } else {
-                    await soundRef.current.playAsync();
-                }
-            } else {
-                const { sound: newSound } = await Audio.Sound.createAsync(
-                    { uri: note.uri },
-                    { shouldPlay: true },
-                    onPlaybackStatusUpdate
-                );
-                soundRef.current = newSound;
-            }
-        } catch (error) {
-            console.error('Error playing sound', error);
-            Alert.alert('Error', 'Could not play the audio');
-        }
-    }
 
     const handleRename = () => {
         if (newName.trim()) {
@@ -72,16 +24,37 @@ const VoiceNoteItem = ({ note, onDelete, onRename }) => {
         return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
     };
 
+    const seekToPosition = (event) => {
+        const { locationX } = event.nativeEvent;
+        const progressBarWidth = 300; // Approximate width, could be made dynamic
+        const seekPosition = (locationX / progressBarWidth) * currentDuration;
+        onSeek(seekPosition);
+    };
+
     return (
         <View style={styles.container}>
             <View style={styles.mainContent}>
+                {currentPlayingId === note.id && (
+                    <TouchableOpacity style={styles.skipButton} onPress={onRewind}>
+                        <Rewind size={20} color="#6366f1" />
+                    </TouchableOpacity>
+                )}
                 <TouchableOpacity style={styles.playButton} onPress={playSound}>
-                    {isPlaying ? (
-                        <Pause size={24} color="#6366f1" fill="#6366f1" />
+                    {currentPlayingId === note.id ? (
+                        isPaused ? (
+                            <Play size={24} color="#6366f1" fill="#6366f1" />
+                        ) : (
+                            <Pause size={24} color="#6366f1" fill="#6366f1" />
+                        )
                     ) : (
                         <Play size={24} color="#6366f1" fill="#6366f1" />
                     )}
                 </TouchableOpacity>
+                {currentPlayingId === note.id && (
+                    <TouchableOpacity style={styles.skipButton} onPress={onFastForward}>
+                        <FastForward size={20} color="#6366f1" />
+                    </TouchableOpacity>
+                )}
 
                 <View style={styles.details}>
                     {isEditing ? (
@@ -113,7 +86,7 @@ const VoiceNoteItem = ({ note, onDelete, onRename }) => {
                                 </View>
                                 <View style={styles.metaIcon}>
                                     <Clock size={12} color="#94a3b8" />
-                                    <Text style={styles.metaText}>{formatDuration(duration)}</Text>
+                                    <Text style={styles.metaText}>{formatDuration(note.duration)}</Text>
                                 </View>
                             </View>
                         </>
@@ -134,10 +107,15 @@ const VoiceNoteItem = ({ note, onDelete, onRename }) => {
                 </View>
             </View>
 
-            {isPlaying && (
-                <View style={styles.progressBarBg}>
-                    <View style={[styles.progressBarFill, { width: `${(position / duration) * 100}%` }]} />
-                </View>
+            {currentPlayingId === note.id && currentDuration > 0 && (
+                <>
+                    <TouchableOpacity style={styles.progressBarBg} onPress={seekToPosition} activeOpacity={0.7}>
+                        <View style={[styles.progressBarFill, { width: `${(currentPosition / currentDuration) * 100}%` }]} />
+                    </TouchableOpacity>
+                    <Text style={styles.timeDisplay}>
+                        {formatDuration(currentPosition)} / {formatDuration(currentDuration)}
+                    </Text>
+                </>
             )}
         </View>
     );
@@ -221,6 +199,21 @@ const styles = StyleSheet.create({
     progressBarFill: {
         height: '100%',
         backgroundColor: '#6366f1',
+    },
+    skipButton: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        backgroundColor: '#f5f3ff',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginHorizontal: 4,
+    },
+    timeDisplay: {
+        fontSize: 12,
+        color: '#94a3b8',
+        textAlign: 'center',
+        marginTop: 4,
     },
 });
 
